@@ -38,7 +38,7 @@ fn connect() {
 fn accept() {
     drop(env_logger::init());
     let mut l = t!(futures_mio::Loop::new());
-    let srv = l.handle().tcp_listen(&"127.0.0.1:0".parse().unwrap());
+    let srv = l.handle().tcp_listen("127.0.0.1:0");
     let srv = t!(l.run(srv));
     let addr = t!(srv.local_addr());
 
@@ -64,7 +64,7 @@ fn accept() {
 fn accept2() {
     drop(env_logger::init());
     let mut l = t!(futures_mio::Loop::new());
-    let srv = l.handle().tcp_listen(&"127.0.0.1:0".parse().unwrap());
+    let srv = l.handle().tcp_listen("127.0.0.1:0");
     let srv = t!(l.run(srv));
     let addr = t!(srv.local_addr());
 

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use futures::stream::Stream;
 use futures::{Future, IntoFuture, failed, Poll};
 use futures_io::{IoFuture, IoStream};
+use futures_dns::{Endpoint, ToEndpoint};
 use mio;
 
 use {ReadinessStream, LoopHandle};
@@ -158,9 +159,29 @@ impl LoopHandle {
     /// The TCP listener will bind to the provided `addr` address, if available,
     /// and will be returned as a future. The returned future, if resolved
     /// successfully, can then be used to accept incoming connections.
-    pub fn tcp_listen(self, addr: &SocketAddr) -> IoFuture<TcpListener> {
-        match mio::tcp::TcpListener::bind(addr) {
-            Ok(l) => TcpListener::new(l, self),
+    pub fn tcp_listen<'a, T>(self, toep: T) -> IoFuture<TcpListener> where T: ToEndpoint<'a> {
+        fn bind(addr: SocketAddr, handle: LoopHandle) -> IoFuture<TcpListener> {
+            match mio::tcp::TcpListener::bind(&addr) {
+                Ok(l) => TcpListener::new(l, handle),
+                Err(e) => failed(e).boxed(),
+            }
+        }
+
+        match toep.to_endpoint() {
+            Ok(Endpoint::Host(host, port)) => {
+                self.resolve(host).then(move |res| {
+                    match res {
+                        Ok(addrs) => {
+                            // TODO sequential/parallel attempts
+                            bind(SocketAddr::new(addrs[0], port), self)
+                        }
+                        Err(e) => failed(e).boxed(),
+                    }
+                }).boxed()
+            }
+            Ok(Endpoint::SocketAddr(addr)) => {
+                bind(addr, self)
+            }
             Err(e) => failed(e).boxed(),
         }
     }
@@ -172,9 +193,29 @@ impl LoopHandle {
     /// stream has successfully connected. If an error happens during the
     /// connection or during the socket creation, that error will be returned to
     /// the future instead.
-    pub fn tcp_connect(self, addr: &SocketAddr) -> IoFuture<TcpStream> {
-        match mio::tcp::TcpStream::connect(addr) {
-            Ok(tcp) => TcpStream::new(tcp, self),
+    pub fn tcp_connect<'a, T>(self, toep: T) -> IoFuture<TcpStream> where T: ToEndpoint<'a> {
+        fn connect(addr: SocketAddr, handle: LoopHandle) -> IoFuture<TcpStream> {
+            match mio::tcp::TcpStream::connect(&addr) {
+                Ok(tcp) => TcpStream::new(tcp, handle),
+                Err(e) => failed(e).boxed(),
+            }
+        }
+
+        match toep.to_endpoint() {
+            Ok(Endpoint::Host(host, port)) => {
+                self.resolve(host).then(move |res| {
+                    match res {
+                        Ok(addrs) => {
+                            // TODO sequential/parallel attempts
+                            connect(SocketAddr::new(addrs[0], port), self)
+                        }
+                        Err(e) => failed(e).boxed(),
+                    }
+                }).boxed()
+            }
+            Ok(Endpoint::SocketAddr(addr)) => {
+                connect(addr, self)
+            }
             Err(e) => failed(e).boxed(),
         }
     }

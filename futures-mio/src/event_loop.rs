@@ -2,14 +2,16 @@ use std::cell::RefCell;
 use std::io::{self, ErrorKind};
 use std::marker;
 use std::mem;
+use std::net::IpAddr;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use std::time::{Instant, Duration};
 
-use futures::{Future, Poll};
+use futures::{BoxFuture, Future, Poll};
 use futures::task::{self, Task, Notify, TaskHandle};
 use futures::executor::{ExecuteCallback, Executor};
+use futures_dns::{CpuPoolResolver, Resolver};
 use mio;
 use slab::Slab;
 
@@ -54,6 +56,9 @@ pub struct Loop {
     // other words, the safety of `DropBox` below relies on loops not crossing
     // threads.
     _marker: marker::PhantomData<Rc<u32>>,
+
+    // dns resolver
+    resolver: CpuPoolResolver,
 }
 
 struct MioSender {
@@ -69,6 +74,7 @@ struct MioSender {
 pub struct LoopHandle {
     id: usize,
     tx: Arc<MioSender>,
+    resolver: CpuPoolResolver,
 }
 
 /// A non-sendable handle to an event loop, useful for manufacturing instances
@@ -157,6 +163,7 @@ impl Loop {
             timeouts: RefCell::new(Slab::new_starting_at(0, SLAB_CAPACITY)),
             timer_wheel: RefCell::new(TimerWheel::new()),
             _marker: marker::PhantomData,
+            resolver: CpuPoolResolver::new(5),
         })
     }
 
@@ -169,6 +176,7 @@ impl Loop {
         LoopHandle {
             id: self.id,
             tx: self.tx.clone(),
+            resolver: self.resolver.clone(),
         }
     }
 
@@ -698,6 +706,11 @@ impl LoopHandle {
                 result: None,
             },
         }
+    }
+
+    /// Resolve a host name.
+    pub fn resolve(&self, host: &str) -> BoxFuture<Vec<IpAddr>, io::Error> {
+        self.resolver.resolve(host)
     }
 }
 

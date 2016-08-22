@@ -7,6 +7,7 @@
 
 extern crate futures;
 extern crate futures_io;
+extern crate futures_dns;
 extern crate mio;
 extern crate slab;
 
